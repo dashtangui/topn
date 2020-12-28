@@ -13,7 +13,7 @@ TopN is a command-line tool able to conduct the following behavior against a Git
 
 # Programming Language
 
-Developed in go 1.15. 
+go1.15 
 
 # Running Topn
 
