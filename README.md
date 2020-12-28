@@ -19,5 +19,5 @@ go1.15
 
 This repository includes a topn executable that has been build for MacOS. If using a different architecture, project will need to be rebuild.
 
-# Testsing
+# Testing
 The Test Suite can be executed using the built-in testing command go test.
