@@ -13,6 +13,7 @@ type gitClient struct{}
 
 var GitClient gitClient
 
+
 func (gitClient)GetClient(authToken string)*github.Client{
 	var client *github.Client
 	if authToken != ""{
@@ -28,6 +29,16 @@ func (gitClient)GetClient(authToken string)*github.Client{
 	return client
 }
 
+
+var SearchRepositories = func(client *github.Client, ctx context.Context, query string, opts *github.SearchOptions) (*github.RepositoriesSearchResult, *github.Response, error) {
+	return client.Search.Repositories(ctx, query, opts)
+}
+
+var SearchIssues = func(client *github.Client, ctx context.Context, query string, opts *github.SearchOptions) (*github.IssuesSearchResult, *github.Response, error) {
+	return client.Search.Issues(context.Background(), query, opts)
+}
+
+
 func (gitClient)SearchAllRepositoriesByOrg(organization string, sort string, order string, perPage int, authToken string)([]*github.Repository,error){
 	
 	opts := &github.SearchOptions{Sort: sort, Order: order, ListOptions: github.ListOptions{PerPage: perPage}}
@@ -37,14 +48,17 @@ func (gitClient)SearchAllRepositoriesByOrg(organization string, sort string, ord
 
 	var searchResults []*github.Repository
 	for {
-		results, resp, err := client.Search.Repositories(context.Background(), query, opts)
+		results, resp, err := SearchRepositories(client,context.Background(), query, opts)
 		if err != nil{
 			if resp.StatusCode == 403{
 				now := time.Now()
-				resetDuration:= resp.Rate.Reset.Time.Sub(now)
-				log.Printf("WARNING: Rate Limit Exceeded. Need to go idle for: %v \n", resetDuration)
-				time.Sleep(resetDuration)
-				log.Printf("MSG: Waking up now.")
+				willResetIn:=resp.Rate.Reset.Time
+				if(!now.After(willResetIn)){
+					resetDuration:= willResetIn.Sub(now)
+					log.Printf("WARNING: Rate Limit Exceeded. Need to go idle for: %v \n", resetDuration)
+					time.Sleep(resetDuration)
+					log.Printf("MSG: Waking up now.")
+				}
 			}else{
 				log.Printf("ERROR: %v \n", err)
 				return nil, err
@@ -71,14 +85,17 @@ func (gitClient)SearchAllPRsByOrg(organization string, perPage int, authToken st
 
 	var searchResults []*github.Issue
 	for {
-		results, resp, err := client.Search.Issues(context.Background(), query, opts)
+		results, resp, err :=SearchIssues(client,context.Background(), query, opts)
 		if err != nil{
 			if resp.StatusCode == 403{
 				now := time.Now()
-				resetDuration:= resp.Rate.Reset.Time.Sub(now)
-				log.Printf("WARNING: Rate Limit Exceeded. Need to go idle for: %v \n", resetDuration)
-				time.Sleep(resetDuration)
-				log.Printf("MSG: Waking up now.")
+				willResetIn:=resp.Rate.Reset.Time
+				if(!now.After(willResetIn)){
+					resetDuration:= willResetIn.Sub(now)
+					log.Printf("WARNING: Rate Limit Exceeded. Need to go idle for: %v \n", resetDuration)
+					time.Sleep(resetDuration)
+					log.Printf("MSG: Waking up now.")
+				}
 			}else{
 				log.Printf("ERROR: %v \n", err)
 				return nil, err
@@ -86,37 +103,11 @@ func (gitClient)SearchAllPRsByOrg(organization string, perPage int, authToken st
 		}else{
 			searchResults = append(searchResults, results.Issues...)
 			if resp.NextPage == 0{
-				log.Println("End Of Pages")
 				break
 			}
-			log.Printf("SearchAll - Page: %v \n", opts.Page)
 			opts.Page = resp.NextPage
 		}
 	}
 
 	return searchResults,nil
-}
-
-func (gitClient)GetAllRepositoriesByOrg(organization string, pageSize int, authToken string)([]*github.Repository,error){
-
-	client := GitClient.GetClient(authToken)
-
-	opt := &github.RepositoryListByOrgOptions{
-		ListOptions: github.ListOptions{PerPage: pageSize},
-	}
-	var allRepos []*github.Repository
-
-	for{
-		repos, resp, err := client.Repositories.ListByOrg(context.Background(), organization, nil)
-		if err != nil{
-			return nil, err
-		}
-		allRepos = append(allRepos, repos...)
-		if resp.NextPage == 0{
-			break
-		}
-		opt.Page = resp.NextPage
-	}
-
-	return allRepos,nil
 }

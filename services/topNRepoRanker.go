@@ -4,12 +4,12 @@ import (
 	"github.com/google/go-github/v33/github"
 	"github.com/dashtangui/topn/models"
 	"container/heap"
+	"sync"
 	"strings"
 	"log"
 )
 
 type RepositoryClient interface{
-	//GetAllRepositoriesByOrg(string,int,string)([]*github.Repository,error)
 	SearchAllRepositoriesByOrg(string,string,string,int,string)([]*github.Repository,error)
 	SearchAllPRsByOrg(string,int,string)([]*github.Issue,error)
 }
@@ -86,15 +86,36 @@ func(repoRanker TopNRepoRanker) FetchTopNRepositoriesByPullRequests(organization
 }
 
 func(repoRanker TopNRepoRanker) FetchTopNByContributionPercentage(organization string, order string)[]models.RepositoryGroup{
-	allReposByOrg:= repoRanker.FetchAllRepositories(organization,sortBy.Forks,order)
 	
-	forksInRepos := make(map[string]int)
-	for _,repo := range allReposByOrg{
-		forksInRepos[*repo.Name]=*repo.ForksCount
-	}
+	var wg = sync.WaitGroup{}
 
-	allPRsByOrg:= repoRanker.FetchAllPullRequestsInOrg(organization)
-	prsByRepo := mapReducePRsByRepository(allPRsByOrg)
+	wg.Add(2)
+	
+	var forksInRepos = make(map[string]int)
+	go func(forksInRepos map[string]int, repoRanker TopNRepoRanker){
+		defer wg.Done()
+		allReposByOrg:= repoRanker.FetchAllRepositories(organization,sortBy.Forks,order)
+			for _,repo := range allReposByOrg{
+			forksInRepos[*repo.Name]=*repo.ForksCount
+		}
+	}(forksInRepos, repoRanker)
+
+	var prsByRepo = make(map[string]int)
+	go func(prsByRepo map[string]int, repoRanker TopNRepoRanker){
+		defer wg.Done()
+		allPRsByOrg:= repoRanker.FetchAllPullRequestsInOrg(organization)
+		
+		for _,pr := range allPRsByOrg {
+			if pr.RepositoryURL !=nil{
+				repoUrlElems := strings.Split(*pr.RepositoryURL,"/")
+				issueRepo := repoUrlElems[len(repoUrlElems)-1]
+				prsByRepo[issueRepo]++
+			}
+		}
+
+	}(prsByRepo, repoRanker)
+	
+	wg.Wait()
 
 	repoHeap := &RepositoryHeap{}
 	heap.Init(repoHeap)
@@ -116,7 +137,8 @@ func(repoRanker TopNRepoRanker) FetchTopNByContributionPercentage(organization s
 	return reposInOrder
  }
 
-func mapReducePRsByRepository(allPRs []*github.Issue)map[string]int{
+
+ func mapReducePRsByRepository(allPRs []*github.Issue)map[string]int{
 	prsByRepo := make(map[string]int) 
 	
 	for _,pr := range allPRs {
